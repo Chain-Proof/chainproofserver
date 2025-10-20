@@ -3,23 +3,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import muCheckerRoutes from './routes/mutChecker.js';
 
-console.log('✅ Step 1: Basic imports successful');
+console.log('✅ Imports successful');
 console.log('🔑 Environment check - PINATA_JWT:', process.env.PINATA_JWT ? 'Loaded ✓' : 'Missing ✗');
-
-// Test importing routes step by step
-console.log('🔍 Step 2: Attempting to import muCheckerRoutes...');
-
-try {
-  const muCheckerRoutes = await import('./routes/mutChecker.js');
-  console.log('✅ Step 2: Route import successful');
-} catch (error) {
-  console.error('❌ Step 2 FAILED: Route import failed');
-  console.error('Error:', error.message);
-  process.exit(1);
-}
-
-console.log('✅ All imports successful! Starting server...');
 
 // Initialize Express app
 const app = express();
@@ -83,8 +70,7 @@ app.use('/api/', limiter);
 app.use('/api/mu-checker/batch-risk', batchLimiter);
 app.use('/api/mu-checker/batch-classify', batchLimiter);
 
-// Import and use routes
-const { default: muCheckerRoutes } = await import('./routes/mutChecker.js');
+// Use routes
 app.use('/api/mu-checker', muCheckerRoutes);
 
 // Global health check
@@ -131,23 +117,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -156,24 +125,44 @@ process.on('unhandledRejection', (reason, promise) => {
   }
 });
 
-// Start server
-const server = app.listen(PORT, () => {
-  console.log('=================================');
-  console.log(`🚀 ChainProof API Server`);
-  console.log(`📡 Environment: ${NODE_ENV}`);
-  console.log(`🌐 Port: ${PORT}`);
-  console.log(`🔗 URL: http://localhost:${PORT}`);
-  console.log('=================================');
-  console.log('Available endpoints:');
-  console.log(`  GET  http://localhost:${PORT}/`);
-  console.log(`  GET  http://localhost:${PORT}/health`);
-  console.log(`  POST http://localhost:${PORT}/api/mu-checker/analyze`);
-  console.log(`  POST http://localhost:${PORT}/api/mu-checker/risk-score`);
-  console.log(`  POST http://localhost:${PORT}/api/mu-checker/full-analysis`);
-  console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-risk`);
-  console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-classify`);
-  console.log(`  GET  http://localhost:${PORT}/api/mu-checker/health`);
-  console.log('=================================');
-});
+// Start server (only when not in Vercel serverless environment)
+if (process.env.VERCEL !== '1') {
+  const server = app.listen(PORT, () => {
+    console.log('=================================');
+    console.log(`🚀 ChainProof API Server`);
+    console.log(`📡 Environment: ${NODE_ENV}`);
+    console.log(`🌐 Port: ${PORT}`);
+    console.log(`🔗 URL: http://localhost:${PORT}`);
+    console.log('=================================');
+    console.log('Available endpoints:');
+    console.log(`  GET  http://localhost:${PORT}/`);
+    console.log(`  GET  http://localhost:${PORT}/health`);
+    console.log(`  POST http://localhost:${PORT}/api/mu-checker/analyze`);
+    console.log(`  POST http://localhost:${PORT}/api/mu-checker/risk-score`);
+    console.log(`  POST http://localhost:${PORT}/api/mu-checker/full-analysis`);
+    console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-risk`);
+    console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-classify`);
+    console.log(`  GET  http://localhost:${PORT}/api/mu-checker/health`);
+    console.log('=================================');
+  });
 
+  // Graceful shutdown (only for local server)
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully...');
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
+}
+
+// Export for Vercel serverless
 export default app;
