@@ -19,11 +19,11 @@ class MUAlgorithm {
 
             const analysis = this.performDeepAnalysis(metadata, jupiterData, coingeckoData, mintAddress);
             const finalScore = this.calculateFinalScore(analysis);
-            const classification = this.determineClassification(finalScore, analysis);
+            const classificationType = this.determineClassification(finalScore);
 
             return {
                 mint: mintAddress,
-                classification: classification,
+                classification: classificationType,  // Returns 'UTILITY' or 'MEME' string
                 utilityScore: Math.round(finalScore.utility),
                 memeScore: Math.round(finalScore.meme),
                 analysis: analysis,
@@ -305,23 +305,21 @@ class MUAlgorithm {
         };
     }
 
-    determineClassification(finalScore, analysis) {
-        const { utility } = finalScore;
-        
-        // Strong utility indicators override
-        const strongUtilitySignals = [
-            analysis.verification.score >= 70,
-            analysis.marketPresence.score >= 60,
-            analysis.tradingPatterns.score >= 70
-        ];
+    determineClassification(finalScore) {
+        const { utility, meme } = finalScore;
 
-        const strongUtilityCount = strongUtilitySignals.filter(Boolean).length;
+        // Simple direct comparison - if utility score is greater than meme score, it's UTILITY
+        if (utility > meme) {
+            return 'UTILITY';
+        }
 
-        if (utility >= 65) return 'UTILITY';
-        if (utility >= 55 && strongUtilityCount >= 2) return 'UTILITY';
-        if (utility >= 45 && strongUtilityCount >= 3) return 'UTILITY';
-        
-        return 'MEME';
+        // If meme score is greater than utility score, it's MEME
+        if (meme > utility) {
+            return 'MEME';
+        }
+
+        // If scores are exactly equal (rare case), return UNCATEGORIZED
+        return 'UNCATEGORIZED';
     }
 }
 

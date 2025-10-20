@@ -3,7 +3,7 @@ import axios from 'axios';
 class TokenRiskScorer {
   constructor() {
     this.jupiterBaseUrl = 'https://lite-api.jup.ag/tokens/v2';
-    this.solanaRpcUrl = 'https://api.mainnet-beta.solana.com';
+    this.solanaRpcUrl = 'https://mainnet.helius-rpc.com/?api-key=53b061f7-82e6-4436-a39e-fe1cbfdf0394';
   }
 
   /**

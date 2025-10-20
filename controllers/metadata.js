@@ -3,7 +3,7 @@ import { getMint } from '@solana/spl-token';
 import { Metaplex } from '@metaplex-foundation/js';
 
 class TokenMetadataFetcher {
-  constructor(rpcUrl = 'https://api.mainnet-beta.solana.com') {
+  constructor(rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=53b061f7-82e6-4436-a39e-fe1cbfdf0394') {
     this.connection = new Connection(rpcUrl, 'confirmed');
     this.metaplex = Metaplex.make(this.connection);
   }
