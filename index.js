@@ -19,6 +19,10 @@ connectDB();
 // Initialize Express app
 const app = express();
 
+// Trust proxy - REQUIRED for deployment on Render, Heroku, Vercel, etc.
+// This allows Express to trust the X-Forwarded-For header from the proxy
+app.set('trust proxy', 1);
+
 // Environment variables
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -33,11 +37,10 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
   keyGenerator: (req) => {
     // Use token address as key for rate limiting instead of IP
     const tokenAddress = req.body?.tokenAddress || req.body?.mintAddress;
-    return tokenAddress || `unknown-${Date.now()}`;
+    return tokenAddress || req.ip || `unknown-${Date.now()}`;
   }
 });
 
@@ -48,14 +51,13 @@ const batchLimiter = rateLimit({
     success: false,
     error: 'Too many batch requests, please try again later.'
   },
-  validate: { trustProxy: false },
   keyGenerator: (req) => {
     // Use first token address in batch as key
     const tokenAddresses = req.body?.tokenAddresses;
     if (tokenAddresses && Array.isArray(tokenAddresses) && tokenAddresses.length > 0) {
       return tokenAddresses[0];
     }
-    return `unknown-batch-${Date.now()}`;
+    return req.ip || `unknown-batch-${Date.now()}`;
   }
 });
 
@@ -69,10 +71,9 @@ const premiumLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
   keyGenerator: (req) => {
     // Use API key for rate limiting
-    return req.apiKey?._id?.toString() || `anonymous-${Date.now()}`;
+    return req.apiKey?._id?.toString() || req.ip || `anonymous-${Date.now()}`;
   }
 });
 
@@ -83,10 +84,9 @@ const premiumBatchLimiter = rateLimit({
     success: false,
     error: 'Premium batch rate limit exceeded (50 batch requests per 15 minutes). Please wait before retrying.'
   },
-  validate: { trustProxy: false },
   keyGenerator: (req) => {
     // Use API key for rate limiting
-    return req.apiKey?._id?.toString() || `anonymous-${Date.now()}`;
+    return req.apiKey?._id?.toString() || req.ip || `anonymous-${Date.now()}`;
   }
 });
 
