@@ -8,6 +8,10 @@ import muCheckerRoutes from './routes/mutChecker.js';
 import premiumMuCheckerRoutes from './routes/premiumMutChecker.js';
 import authRoutes from './routes/authSQL.js';
 
+// Import models to ensure they're registered with Sequelize
+import './models/UserSQL.js';
+import './models/APIKeySQL.js';
+
 console.log('✅ Imports successful');
 console.log('🔑 Environment check - PINATA_JWT:', process.env.PINATA_JWT ? 'Loaded ✓' : 'Missing ✗');
 console.log('🔑 Environment check - JWT_SECRET:', process.env.JWT_SECRET ? 'Loaded ✓' : 'Missing ✗');
@@ -37,10 +41,13 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => false,
   keyGenerator: (req) => {
     // Use token address as key for rate limiting instead of IP
     const tokenAddress = req.body?.tokenAddress || req.body?.mintAddress;
-    return tokenAddress || req.ip || `unknown-${Date.now()}`;
+    if (tokenAddress) return tokenAddress;
+    // Fallback to timestamp-based key instead of IP to avoid IPv6 validation issues
+    return `anon-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   }
 });
 
@@ -57,7 +64,7 @@ const batchLimiter = rateLimit({
     if (tokenAddresses && Array.isArray(tokenAddresses) && tokenAddresses.length > 0) {
       return tokenAddresses[0];
     }
-    return req.ip || `unknown-batch-${Date.now()}`;
+    return `batch-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   }
 });
 
@@ -73,7 +80,7 @@ const premiumLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     // Use API key for rate limiting
-    return req.apiKey?._id?.toString() || req.ip || `anonymous-${Date.now()}`;
+    return req.apiKey?._id?.toString() || `premium-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   }
 });
 
@@ -86,7 +93,7 @@ const premiumBatchLimiter = rateLimit({
   },
   keyGenerator: (req) => {
     // Use API key for rate limiting
-    return req.apiKey?._id?.toString() || req.ip || `anonymous-${Date.now()}`;
+    return req.apiKey?._id?.toString() || `premium-batch-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   }
 });
 
