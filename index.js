@@ -3,10 +3,18 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import connectDB from './config/sequelize.js';
 import muCheckerRoutes from './routes/mutChecker.js';
+import premiumMuCheckerRoutes from './routes/premiumMutChecker.js';
+import authRoutes from './routes/authSQL.js';
 
 console.log('✅ Imports successful');
 console.log('🔑 Environment check - PINATA_JWT:', process.env.PINATA_JWT ? 'Loaded ✓' : 'Missing ✗');
+console.log('🔑 Environment check - JWT_SECRET:', process.env.JWT_SECRET ? 'Loaded ✓' : 'Missing ✗');
+console.log('🔑 Environment check - DATABASE_URL:', process.env.DATABASE_URL ? 'Loaded ✓' : 'Missing ✗');
+
+// Connect to PostgreSQL
+connectDB();
 
 // Initialize Express app
 const app = express();
@@ -15,16 +23,22 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Rate limiting configuration
+// Rate limiting configuration for PUBLIC endpoints
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: {
     success: false,
-    error: 'Too many requests from this IP, please try again later.'
+    error: 'Too many requests for this token, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
+  keyGenerator: (req) => {
+    // Use token address as key for rate limiting instead of IP
+    const tokenAddress = req.body?.tokenAddress || req.body?.mintAddress;
+    return tokenAddress || `unknown-${Date.now()}`;
+  }
 });
 
 const batchLimiter = rateLimit({
@@ -33,6 +47,46 @@ const batchLimiter = rateLimit({
   message: {
     success: false,
     error: 'Too many batch requests, please try again later.'
+  },
+  validate: { trustProxy: false },
+  keyGenerator: (req) => {
+    // Use first token address in batch as key
+    const tokenAddresses = req.body?.tokenAddresses;
+    if (tokenAddresses && Array.isArray(tokenAddresses) && tokenAddresses.length > 0) {
+      return tokenAddresses[0];
+    }
+    return `unknown-batch-${Date.now()}`;
+  }
+});
+
+// Rate limiting configuration for PREMIUM endpoints (API key required)
+const premiumLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: {
+    success: false,
+    error: 'Premium rate limit exceeded (500 requests per 15 minutes). Please wait before retrying.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false },
+  keyGenerator: (req) => {
+    // Use API key for rate limiting
+    return req.apiKey?._id?.toString() || `anonymous-${Date.now()}`;
+  }
+});
+
+const premiumBatchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: {
+    success: false,
+    error: 'Premium batch rate limit exceeded (50 batch requests per 15 minutes). Please wait before retrying.'
+  },
+  validate: { trustProxy: false },
+  keyGenerator: (req) => {
+    // Use API key for rate limiting
+    return req.apiKey?._id?.toString() || `anonymous-${Date.now()}`;
   }
 });
 
@@ -56,22 +110,34 @@ app.get('/', (req, res) => {
     message: 'ChainProof API is running',
     version: '1.0.0',
     endpoints: {
-      muChecker: '/api/mu-checker',
+      auth: '/auth',
+      publicAPI: '/api/mu-checker (free, rate limited)',
+      premiumAPI: '/api/v1/mu-checker (requires API key, higher limits)',
       health: '/health'
     },
     timestamp: new Date().toISOString()
   });
 });
 
-// Apply rate limiting to API routes
+// Apply rate limiting to PUBLIC API routes
 app.use('/api/', limiter);
 
-// Apply stricter rate limiting to batch endpoints (must be before the route definitions)
+// Apply stricter rate limiting to PUBLIC batch endpoints (must be before the route definitions)
 app.use('/api/mu-checker/batch-risk', batchLimiter);
 app.use('/api/mu-checker/batch-classify', batchLimiter);
 
+// Apply rate limiting to PREMIUM API routes
+app.use('/api/v1/', premiumLimiter);
+
+// Apply stricter rate limiting to PREMIUM batch endpoints (must be before the route definitions)
+app.use('/api/v1/mu-checker/batch-risk', premiumBatchLimiter);
+app.use('/api/v1/mu-checker/batch-classify', premiumBatchLimiter);
+app.use('/api/v1/mu-checker/batch-full-analysis', premiumBatchLimiter);
+
 // Use routes
+app.use('/auth', authRoutes);
 app.use('/api/mu-checker', muCheckerRoutes);
+app.use('/api/v1/mu-checker', premiumMuCheckerRoutes);
 
 // Global health check
 app.get('/health', (req, res) => {
@@ -93,16 +159,40 @@ app.use((req, res) => {
     success: false,
     error: 'Endpoint not found',
     path: req.path,
-    availableEndpoints: [
-      'GET /',
-      'GET /health',
-      'POST /api/mu-checker/analyze',
-      'POST /api/mu-checker/risk-score',
-      'POST /api/mu-checker/full-analysis',
-      'POST /api/mu-checker/batch-risk',
-      'POST /api/mu-checker/batch-classify',
-      'GET /api/mu-checker/health'
-    ]
+    availableEndpoints: {
+      general: [
+        'GET /',
+        'GET /health'
+      ],
+      authentication: [
+        'POST /auth/register',
+        'POST /auth/login',
+        'POST /auth/api-keys (JWT required)',
+        'GET /auth/api-keys (JWT required)',
+        'DELETE /auth/api-keys/:keyId (JWT required)',
+        'PATCH /auth/api-keys/:keyId (JWT required)',
+        'GET /auth/me (JWT required)'
+      ],
+      publicAPI: [
+        'POST /api/mu-checker/analyze (free)',
+        'POST /api/mu-checker/risk-score (free)',
+        'POST /api/mu-checker/full-analysis (free)',
+        'POST /api/mu-checker/batch-risk (free)',
+        'POST /api/mu-checker/batch-classify (free)',
+        'POST /api/mu-checker/prepare-registration (free)',
+        'GET /api/mu-checker/health'
+      ],
+      premiumAPI: [
+        'POST /api/v1/mu-checker/analyze (API key required)',
+        'POST /api/v1/mu-checker/risk-score (API key required)',
+        'POST /api/v1/mu-checker/full-analysis (API key required)',
+        'POST /api/v1/mu-checker/batch-risk (API key required)',
+        'POST /api/v1/mu-checker/batch-classify (API key required)',
+        'POST /api/v1/mu-checker/batch-full-analysis (API key required)',
+        'POST /api/v1/mu-checker/prepare-registration (API key required)',
+        'GET /api/v1/mu-checker/health'
+      ]
+    }
   });
 });
 
@@ -137,12 +227,21 @@ if (process.env.VERCEL !== '1') {
     console.log('Available endpoints:');
     console.log(`  GET  http://localhost:${PORT}/`);
     console.log(`  GET  http://localhost:${PORT}/health`);
+    console.log('\n  Authentication:');
+    console.log(`  POST http://localhost:${PORT}/auth/register`);
+    console.log(`  POST http://localhost:${PORT}/auth/login`);
+    console.log(`  POST http://localhost:${PORT}/auth/api-keys (JWT required)`);
+    console.log(`  GET  http://localhost:${PORT}/auth/api-keys (JWT required)`);
+    console.log('\n  Public API (Free - 100 req/15min):');
     console.log(`  POST http://localhost:${PORT}/api/mu-checker/analyze`);
     console.log(`  POST http://localhost:${PORT}/api/mu-checker/risk-score`);
     console.log(`  POST http://localhost:${PORT}/api/mu-checker/full-analysis`);
-    console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-risk`);
     console.log(`  POST http://localhost:${PORT}/api/mu-checker/batch-classify`);
-    console.log(`  GET  http://localhost:${PORT}/api/mu-checker/health`);
+    console.log('\n  Premium API (API Key - 500 req/15min):');
+    console.log(`  POST http://localhost:${PORT}/api/v1/mu-checker/analyze`);
+    console.log(`  POST http://localhost:${PORT}/api/v1/mu-checker/risk-score`);
+    console.log(`  POST http://localhost:${PORT}/api/v1/mu-checker/full-analysis`);
+    console.log(`  POST http://localhost:${PORT}/api/v1/mu-checker/batch-full-analysis`);
     console.log('=================================');
   });
 

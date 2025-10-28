@@ -2,6 +2,7 @@ import express from 'express';
 import { MUAlgorithm } from '../MUchecker/algo.js';
 import { TokenRiskScorer } from '../MUchecker/riskscore.js';
 import { JupiterChecker } from '../controllers/jupiterchecker.js';
+import { verifyApiKey, checkPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
